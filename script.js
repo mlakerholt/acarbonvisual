@@ -287,7 +287,7 @@ function drawIntro() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = "#00ff66";
   ctx.font = 'bold 22px "Courier New", monospace';
-  ctx.fillText("RETRO PROTEIN BACKBONE VIEWER", 130, 220);
+  ctx.fillText("PROTEIN BACKBONE VIEWER", 130, 220);
   ctx.font = '16px "Courier New", monospace';
   ctx.fillText("Load a PDB ID or click RANDOM PROTEIN to begin.", 150, 260);
 }
