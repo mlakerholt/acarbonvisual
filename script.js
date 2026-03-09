@@ -8,6 +8,7 @@ const metaEl = document.getElementById("meta");
 const xRotInput = document.getElementById("xRot");
 const yRotInput = document.getElementById("yRot");
 const zRotInput = document.getElementById("zRot");
+
 const scaleInput = document.getElementById("scale");
 const showNumbersInput = document.getElementById("showNumbers");
 const highlightStartInput = document.getElementById("highlightStart");
@@ -293,3 +294,4 @@ function drawIntro() {
 }
 
 drawIntro();
+requestAnimationFrame(stepAutoRotate);
