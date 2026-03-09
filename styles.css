@@ -70,6 +70,31 @@ h2 {
   gap: 8px;
 }
 
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.range-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inline-inputs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inline-inputs input {
+  width: 85px;
+  font-family: inherit;
+  padding: 4px;
+  border: 2px inset #ddd;
+}
+
 input[type="text"] {
   flex: 1;
   font-family: inherit;
