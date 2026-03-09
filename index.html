@@ -34,8 +34,28 @@
           <label for="yRot">Rotate Y</label>
           <input id="yRot" type="range" min="-180" max="180" value="-25" />
 
+          <label for="zRot">Rotate Z</label>
+          <input id="zRot" type="range" min="-180" max="180" value="0" />
+
           <label for="scale">Scale</label>
           <input id="scale" type="range" min="1" max="12" value="5" />
+
+          <h2>Atom Display</h2>
+          <label class="checkbox-row" for="showNumbers">
+            <input id="showNumbers" type="checkbox" /> Show carbon numbering
+          </label>
+          <div class="range-row">
+            <label for="highlightStart">Highlight range</label>
+            <div class="inline-inputs">
+              <input id="highlightStart" type="number" min="1" placeholder="Start" />
+              <span>to</span>
+              <input id="highlightEnd" type="number" min="1" placeholder="End" />
+            </div>
+          </div>
+          <div class="input-row">
+            <button id="applyRangeBtn">HIGHLIGHT</button>
+            <button id="clearRangeBtn">CLEAR</button>
+          </div>
 
           <div id="status" class="status">Ready.</div>
         </section>
