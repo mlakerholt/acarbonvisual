@@ -8,7 +8,7 @@ const metaEl = document.getElementById("meta");
 const xRotInput = document.getElementById("xRot");
 const yRotInput = document.getElementById("yRot");
 const zRotInput = document.getElementById("zRot");
-const autoRotateInput = document.getElementById("autoRotate");
+
 const scaleInput = document.getElementById("scale");
 const showNumbersInput = document.getElementById("showNumbers");
 const highlightStartInput = document.getElementById("highlightStart");
@@ -21,8 +21,6 @@ const randomPool = ["1CRN", "4HHB", "1UBQ", "2MNR", "3NIR", "1BNA", "1A3N", "2PT
 let currentPoints = [];
 let currentLabel = "";
 let highlightRange = null;
-let autoRotateLastTime = null;
-const autoRotateDegreesPerSecond = 18;
 
 function setStatus(message) {
   statusEl.textContent = message;
@@ -284,38 +282,6 @@ randomBtn.addEventListener("click", () => {
 
 applyRangeBtn.addEventListener("click", applyHighlightRange);
 clearRangeBtn.addEventListener("click", clearHighlightRange);
-
-autoRotateInput.addEventListener("change", () => {
-  if (!autoRotateInput.checked) {
-    autoRotateLastTime = null;
-    return;
-  }
-
-  if (currentPoints.length) {
-    setStatus("Auto-rotate ON (clockwise pedestal spin).");
-  } else {
-    setStatus("Load a structure to preview auto-rotation.");
-  }
-});
-
-function stepAutoRotate(timestamp) {
-  if (autoRotateInput.checked && currentPoints.length) {
-    if (autoRotateLastTime !== null) {
-      const deltaSeconds = (timestamp - autoRotateLastTime) / 1000;
-      let nextRotation = Number.parseFloat(yRotInput.value) - autoRotateDegreesPerSecond * deltaSeconds;
-      if (nextRotation < -180) {
-        nextRotation += 360;
-      }
-      yRotInput.value = String(nextRotation);
-      drawBackbone(currentPoints, currentLabel);
-    }
-    autoRotateLastTime = timestamp;
-  } else {
-    autoRotateLastTime = null;
-  }
-
-  requestAnimationFrame(stepAutoRotate);
-}
 
 function drawIntro() {
   ctx.fillStyle = "#050515";
