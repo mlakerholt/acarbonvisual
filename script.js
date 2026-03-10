@@ -8,7 +8,7 @@ const metaEl = document.getElementById("meta");
 const xRotInput = document.getElementById("xRot");
 const yRotInput = document.getElementById("yRot");
 const zRotInput = document.getElementById("zRot");
-
+const autoRotateInput = document.getElementById("autoRotate");
 const scaleInput = document.getElementById("scale");
 const showNumbersInput = document.getElementById("showNumbers");
 const highlightStartInput = document.getElementById("highlightStart");
@@ -21,6 +21,9 @@ const randomPool = ["1CRN", "4HHB", "1UBQ", "2MNR", "3NIR", "1BNA", "1A3N", "2PT
 let currentPoints = [];
 let currentLabel = "";
 let highlightRange = null;
+let autoRotateLastTime = null;
+let currentModelRadius = 1;
+const autoRotateDegreesPerSecond = 18;
 
 function setStatus(message) {
   statusEl.textContent = message;
@@ -49,6 +52,35 @@ function parseAlphaCarbons(pdbText) {
   }
 
   return points;
+}
+
+
+function normalizeBackbone(points) {
+  if (!points.length) {
+    return { normalized: [], radius: 1 };
+  }
+
+  const center = points.reduce(
+    (acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y, z: acc.z + point.z }),
+    { x: 0, y: 0, z: 0 }
+  );
+  center.x /= points.length;
+  center.y /= points.length;
+  center.z /= points.length;
+
+  const normalized = points.map((point) => ({
+    x: point.x - center.x,
+    y: point.y - center.y,
+    z: point.z - center.z,
+    index: point.index
+  }));
+
+  const radius = normalized.reduce((maxRadius, point) => {
+    const distance = Math.sqrt(point.x * point.x + point.y * point.y + point.z * point.z);
+    return Math.max(maxRadius, distance);
+  }, 0);
+
+  return { normalized, radius: Math.max(radius, 1) };
 }
 
 function rotatePoint(point, rotXDeg, rotYDeg, rotZDeg) {
@@ -94,31 +126,13 @@ function drawBackbone(points, label) {
   const scaleFactor = Number.parseFloat(scaleInput.value);
   const transformed = points.map((p) => rotatePoint(p, rotX, rotY, rotZ));
 
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-
-  for (const p of transformed) {
-    minX = Math.min(minX, p.x);
-    maxX = Math.max(maxX, p.x);
-    minY = Math.min(minY, p.y);
-    maxY = Math.max(maxY, p.y);
-  }
-
-  const spanX = Math.max(1, maxX - minX);
-  const spanY = Math.max(1, maxY - minY);
   const padding = 50;
-  const fitScale =
-    Math.min((canvas.width - padding * 2) / spanX, (canvas.height - padding * 2) / spanY) *
-    (scaleFactor / 5);
-
-  const centerX = (minX + maxX) / 2;
-  const centerY = (minY + maxY) / 2;
+  const baseScale = (Math.min(canvas.width, canvas.height) - padding * 2) / (2 * currentModelRadius);
+  const fitScale = baseScale * (scaleFactor / 5);
 
   const projected = transformed.map((p) => ({
-    x: (p.x - centerX) * fitScale + canvas.width / 2,
-    y: (p.y - centerY) * -fitScale + canvas.height / 2,
+    x: p.x * fitScale + canvas.width / 2,
+    y: -p.y * fitScale + canvas.height / 2,
     z: p.z,
     index: p.index
   }));
@@ -204,7 +218,9 @@ async function loadProtein(rawId) {
       throw new Error("No alpha-carbons found in this file.");
     }
 
-    currentPoints = points;
+    const normalizedBackbone = normalizeBackbone(points);
+    currentPoints = normalizedBackbone.normalized;
+    currentModelRadius = normalizedBackbone.radius;
     currentLabel = pdbId;
     highlightRange = null;
     highlightStartInput.value = "";
@@ -220,6 +236,41 @@ async function loadProtein(rawId) {
   } catch (error) {
     setStatus(`Failed to load ${pdbId}: ${error.message}`);
     setMeta("No structure loaded.");
+    currentPoints = [];
+    currentModelRadius = 1;
+  }
+}
+
+function applyHighlightRange() {
+  if (!currentPoints.length) {
+    setStatus("Load a structure before setting a highlight range.");
+    return;
+  }
+
+  const maxIndex = currentPoints.length;
+  const start = Number.parseInt(highlightStartInput.value, 10);
+  const end = Number.parseInt(highlightEndInput.value, 10);
+
+  if (!Number.isInteger(start) || !Number.isInteger(end)) {
+    setStatus("Enter valid start and end carbon numbers.");
+    return;
+  }
+
+  if (start < 1 || end < 1 || start > maxIndex || end > maxIndex || start > end) {
+    setStatus(`Invalid range. Use 1-${maxIndex} with start <= end.`);
+    return;
+  }
+
+  highlightRange = { start, end };
+  drawBackbone(currentPoints, currentLabel);
+}
+
+function clearHighlightRange() {
+  highlightRange = null;
+  highlightStartInput.value = "";
+  highlightEndInput.value = "";
+  if (currentPoints.length) {
+    drawBackbone(currentPoints, currentLabel);
   }
 }
 
@@ -282,6 +333,38 @@ randomBtn.addEventListener("click", () => {
 
 applyRangeBtn.addEventListener("click", applyHighlightRange);
 clearRangeBtn.addEventListener("click", clearHighlightRange);
+
+autoRotateInput.addEventListener("change", () => {
+  if (!autoRotateInput.checked) {
+    autoRotateLastTime = null;
+    return;
+  }
+
+  if (currentPoints.length) {
+    setStatus("Auto-rotate ON (clockwise pedestal spin).");
+  } else {
+    setStatus("Load a structure to preview auto-rotation.");
+  }
+});
+
+function stepAutoRotate(timestamp) {
+  if (autoRotateInput.checked && currentPoints.length) {
+    if (autoRotateLastTime !== null) {
+      const deltaSeconds = (timestamp - autoRotateLastTime) / 1000;
+      let nextRotation = Number.parseFloat(yRotInput.value) - autoRotateDegreesPerSecond * deltaSeconds;
+      if (nextRotation < -180) {
+        nextRotation += 360;
+      }
+      yRotInput.value = String(nextRotation);
+      drawBackbone(currentPoints, currentLabel);
+    }
+    autoRotateLastTime = timestamp;
+  } else {
+    autoRotateLastTime = null;
+  }
+
+  requestAnimationFrame(stepAutoRotate);
+}
 
 function drawIntro() {
   ctx.fillStyle = "#050515";
