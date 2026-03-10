@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Retro Protein Backbone Viewer</title>
+    <title>Protein Backbone Viewer</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="page-wrap">
       <header class="window">
-        <div class="window-title">RETRO PROTEIN BACKBONE VISUALIZER v1.0</div>
+        <div class="window-title">PROTEIN BACKBONE VISUALIZER v1.0</div>
         <p>
           Pull alpha-carbon backbone coordinates from wwPDB and project the 3D trace to a 2D
           image.
@@ -34,8 +34,31 @@
           <label for="yRot">Rotate Y</label>
           <input id="yRot" type="range" min="-180" max="180" value="-25" />
 
+          <label for="zRot">Rotate Z</label>
+          <input id="zRot" type="range" min="-180" max="180" value="0" />
+          <label class="checkbox-row" for="autoRotate">
+            <input id="autoRotate" type="checkbox" /> Auto-rotate (clockwise)
+          </label>
+
           <label for="scale">Scale</label>
           <input id="scale" type="range" min="1" max="12" value="5" />
+
+          <h2>Atom Display</h2>
+          <label class="checkbox-row" for="showNumbers">
+            <input id="showNumbers" type="checkbox" /> Show carbon numbering
+          </label>
+          <div class="range-row">
+            <label for="highlightStart">Highlight range</label>
+            <div class="inline-inputs">
+              <input id="highlightStart" type="number" min="1" placeholder="Start" />
+              <span>to</span>
+              <input id="highlightEnd" type="number" min="1" placeholder="End" />
+            </div>
+          </div>
+          <div class="input-row">
+            <button id="applyRangeBtn">HIGHLIGHT</button>
+            <button id="clearRangeBtn">CLEAR</button>
+          </div>
 
           <div id="status" class="status">Ready.</div>
         </section>
@@ -47,7 +70,7 @@
         </section>
       </main>
 
-      <footer class="window footer">Data: wwPDB / RCSB PDB. Rendering: client-side HTML5 canvas.</footer>
+      <footer class="window footer">Data: wwPDB / RCSB PDB. Rendering: client-side HTML5 canvas. | © 2026 Magnus Lian Akerholt</footer>
     </div>
 
     <script src="script.js"></script>

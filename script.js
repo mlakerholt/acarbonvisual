@@ -7,23 +7,22 @@ const statusEl = document.getElementById("status");
 const metaEl = document.getElementById("meta");
 const xRotInput = document.getElementById("xRot");
 const yRotInput = document.getElementById("yRot");
+const zRotInput = document.getElementById("zRot");
+const autoRotateInput = document.getElementById("autoRotate");
 const scaleInput = document.getElementById("scale");
+const showNumbersInput = document.getElementById("showNumbers");
+const highlightStartInput = document.getElementById("highlightStart");
+const highlightEndInput = document.getElementById("highlightEnd");
+const applyRangeBtn = document.getElementById("applyRangeBtn");
+const clearRangeBtn = document.getElementById("clearRangeBtn");
 
-const randomPool = [
-  "1CRN",
-  "4HHB",
-  "1UBQ",
-  "2MNR",
-  "3NIR",
-  "1BNA",
-  "1A3N",
-  "2PTC",
-  "5XNL",
-  "6VXX"
-];
+const randomPool = ["1CRN", "4HHB", "1UBQ", "2MNR", "3NIR", "1BNA", "1A3N", "2PTC", "5XNL", "6VXX"];
 
 let currentPoints = [];
 let currentLabel = "";
+let highlightRange = null;
+let autoRotateLastTime = null;
+const autoRotateDegreesPerSecond = 18;
 
 function setStatus(message) {
   statusEl.textContent = message;
@@ -47,21 +46,24 @@ function parseAlphaCarbons(pdbText) {
     const z = Number.parseFloat(line.slice(46, 54));
 
     if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
-      points.push({ x, y, z });
+      points.push({ x, y, z, index: points.length + 1 });
     }
   }
 
   return points;
 }
 
-function rotatePoint(point, rotXDeg, rotYDeg) {
+function rotatePoint(point, rotXDeg, rotYDeg, rotZDeg) {
   const rx = (rotXDeg * Math.PI) / 180;
   const ry = (rotYDeg * Math.PI) / 180;
+  const rz = (rotZDeg * Math.PI) / 180;
 
   const cosX = Math.cos(rx);
   const sinX = Math.sin(rx);
   const cosY = Math.cos(ry);
   const sinY = Math.sin(ry);
+  const cosZ = Math.cos(rz);
+  const sinZ = Math.sin(rz);
 
   const y1 = point.y * cosX - point.z * sinX;
   const z1 = point.y * sinX + point.z * cosX;
@@ -69,7 +71,15 @@ function rotatePoint(point, rotXDeg, rotYDeg) {
   const x2 = point.x * cosY + z1 * sinY;
   const z2 = -point.x * sinY + z1 * cosY;
 
-  return { x: x2, y: y1, z: z2 };
+  const x3 = x2 * cosZ - y1 * sinZ;
+  const y3 = x2 * sinZ + y1 * cosZ;
+
+  return { x: x3, y: y3, z: z2, index: point.index };
+}
+
+function isHighlighted(index) {
+  if (!highlightRange) return false;
+  return index >= highlightRange.start && index <= highlightRange.end;
 }
 
 function drawBackbone(points, label) {
@@ -82,8 +92,9 @@ function drawBackbone(points, label) {
 
   const rotX = Number.parseFloat(xRotInput.value);
   const rotY = Number.parseFloat(yRotInput.value);
+  const rotZ = Number.parseFloat(zRotInput.value);
   const scaleFactor = Number.parseFloat(scaleInput.value);
-  const transformed = points.map((p) => rotatePoint(p, rotX, rotY));
+  const transformed = points.map((p) => rotatePoint(p, rotX, rotY, rotZ));
 
   let minX = Infinity;
   let maxX = -Infinity;
@@ -110,10 +121,9 @@ function drawBackbone(points, label) {
   const projected = transformed.map((p) => ({
     x: (p.x - centerX) * fitScale + canvas.width / 2,
     y: (p.y - centerY) * -fitScale + canvas.height / 2,
-    z: p.z
+    z: p.z,
+    index: p.index
   }));
-
-  projected.sort((a, b) => a.z - b.z);
 
   ctx.lineWidth = 2;
   ctx.strokeStyle = "#00ff66";
@@ -128,16 +138,31 @@ function drawBackbone(points, label) {
   ctx.stroke();
 
   ctx.shadowBlur = 0;
-  ctx.fillStyle = "#ff00aa";
-  for (let i = 0; i < projected.length; i += 12) {
+
+  for (let i = 0; i < projected.length; i += 1) {
+    const atom = projected[i];
+    ctx.fillStyle = isHighlighted(atom.index) ? "#ffe600" : "#ff00aa";
     ctx.beginPath();
-    ctx.arc(projected[i].x, projected[i].y, 2.6, 0, Math.PI * 2);
+    ctx.arc(atom.x, atom.y, isHighlighted(atom.index) ? 3.8 : 2.6, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  if (showNumbersInput.checked) {
+    ctx.fillStyle = "#ffffff";
+    ctx.font = '12px "Courier New", monospace';
+    for (const atom of projected) {
+      if (isHighlighted(atom.index) || atom.index % 5 === 0) {
+        ctx.fillText(String(atom.index), atom.x + 5, atom.y - 5);
+      }
+    }
   }
 
   ctx.fillStyle = "#ffffff";
   ctx.font = 'bold 16px "Courier New", monospace';
-  ctx.fillText(`${label} | Cα atoms: ${projected.length}`, 14, 24);
+  const highlightText = highlightRange
+    ? ` | Highlight: ${highlightRange.start}-${highlightRange.end}`
+    : "";
+  ctx.fillText(`${label} | Cα atoms: ${projected.length}${highlightText}`, 14, 24);
 
   setStatus(
     `Loaded ${label}. Parsed ${projected.length} alpha-carbon coordinates from ATOM records.`
@@ -183,6 +208,9 @@ async function loadProtein(rawId) {
 
     currentPoints = points;
     currentLabel = pdbId;
+    highlightRange = null;
+    highlightStartInput.value = "";
+    highlightEndInput.value = "";
     drawBackbone(currentPoints, currentLabel);
 
     const meta = await fetchEntryMetadata(pdbId);
@@ -194,6 +222,39 @@ async function loadProtein(rawId) {
   } catch (error) {
     setStatus(`Failed to load ${pdbId}: ${error.message}`);
     setMeta("No structure loaded.");
+  }
+}
+
+function applyHighlightRange() {
+  if (!currentPoints.length) {
+    setStatus("Load a structure before setting a highlight range.");
+    return;
+  }
+
+  const maxIndex = currentPoints.length;
+  const start = Number.parseInt(highlightStartInput.value, 10);
+  const end = Number.parseInt(highlightEndInput.value, 10);
+
+  if (!Number.isInteger(start) || !Number.isInteger(end)) {
+    setStatus("Enter valid start and end carbon numbers.");
+    return;
+  }
+
+  if (start < 1 || end < 1 || start > maxIndex || end > maxIndex || start > end) {
+    setStatus(`Invalid range. Use 1-${maxIndex} with start <= end.`);
+    return;
+  }
+
+  highlightRange = { start, end };
+  drawBackbone(currentPoints, currentLabel);
+}
+
+function clearHighlightRange() {
+  highlightRange = null;
+  highlightStartInput.value = "";
+  highlightEndInput.value = "";
+  if (currentPoints.length) {
+    drawBackbone(currentPoints, currentLabel);
   }
 }
 
@@ -213,7 +274,7 @@ randomBtn.addEventListener("click", () => {
   loadProtein(pdbId);
 });
 
-[xRotInput, yRotInput, scaleInput].forEach((input) => {
+[xRotInput, yRotInput, zRotInput, scaleInput, showNumbersInput].forEach((input) => {
   input.addEventListener("input", () => {
     if (currentPoints.length) {
       drawBackbone(currentPoints, currentLabel);
@@ -221,14 +282,50 @@ randomBtn.addEventListener("click", () => {
   });
 });
 
+applyRangeBtn.addEventListener("click", applyHighlightRange);
+clearRangeBtn.addEventListener("click", clearHighlightRange);
+
+autoRotateInput.addEventListener("change", () => {
+  if (!autoRotateInput.checked) {
+    autoRotateLastTime = null;
+    return;
+  }
+
+  if (currentPoints.length) {
+    setStatus("Auto-rotate ON (clockwise pedestal spin).");
+  } else {
+    setStatus("Load a structure to preview auto-rotation.");
+  }
+});
+
+function stepAutoRotate(timestamp) {
+  if (autoRotateInput.checked && currentPoints.length) {
+    if (autoRotateLastTime !== null) {
+      const deltaSeconds = (timestamp - autoRotateLastTime) / 1000;
+      let nextRotation = Number.parseFloat(yRotInput.value) - autoRotateDegreesPerSecond * deltaSeconds;
+      if (nextRotation < -180) {
+        nextRotation += 360;
+      }
+      yRotInput.value = String(nextRotation);
+      drawBackbone(currentPoints, currentLabel);
+    }
+    autoRotateLastTime = timestamp;
+  } else {
+    autoRotateLastTime = null;
+  }
+
+  requestAnimationFrame(stepAutoRotate);
+}
+
 function drawIntro() {
   ctx.fillStyle = "#050515";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = "#00ff66";
   ctx.font = 'bold 22px "Courier New", monospace';
-  ctx.fillText("RETRO PROTEIN BACKBONE VIEWER", 130, 220);
+  ctx.fillText("PROTEIN BACKBONE VIEWER", 130, 220);
   ctx.font = '16px "Courier New", monospace';
   ctx.fillText("Load a PDB ID or click RANDOM PROTEIN to begin.", 150, 260);
 }
 
 drawIntro();
+requestAnimationFrame(stepAutoRotate);
