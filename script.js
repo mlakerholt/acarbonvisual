@@ -274,6 +274,39 @@ function clearHighlightRange() {
   }
 }
 
+function applyHighlightRange() {
+  if (!currentPoints.length) {
+    setStatus("Load a structure before setting a highlight range.");
+    return;
+  }
+
+  const maxIndex = currentPoints.length;
+  const start = Number.parseInt(highlightStartInput.value, 10);
+  const end = Number.parseInt(highlightEndInput.value, 10);
+
+  if (!Number.isInteger(start) || !Number.isInteger(end)) {
+    setStatus("Enter valid start and end carbon numbers.");
+    return;
+  }
+
+  if (start < 1 || end < 1 || start > maxIndex || end > maxIndex || start > end) {
+    setStatus(`Invalid range. Use 1-${maxIndex} with start <= end.`);
+    return;
+  }
+
+  highlightRange = { start, end };
+  drawBackbone(currentPoints, currentLabel);
+}
+
+function clearHighlightRange() {
+  highlightRange = null;
+  highlightStartInput.value = "";
+  highlightEndInput.value = "";
+  if (currentPoints.length) {
+    drawBackbone(currentPoints, currentLabel);
+  }
+}
+
 loadBtn.addEventListener("click", () => {
   loadProtein(pdbInput.value);
 });
