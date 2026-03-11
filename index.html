@@ -3,14 +3,182 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>New Project</title>
+    <title>Protein Backbone Viewer</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main class="container">
-      <h1>New Project Started</h1>
-      <p>This is a fresh workspace.</p>
-    </main>
+    <div class="page-wrap">
+      <header class="window">
+        <div class="window-title">PROTEIN BACKBONE VISUALIZER v1.0</div>
+        <p>
+          Pull alpha-carbon backbone coordinates from wwPDB and project the 3D trace to a 2D
+          image.
+        </p>
+      </header>
+
+      <main class="layout">
+        <section class="window controls">
+          <h2>Load Protein</h2>
+          <label for="pdbId">PDB ID (4 chars)</label>
+          <div class="input-row">
+            <input id="pdbId" name="pdbId" type="text" maxlength="4" placeholder="1CRN" />
+            <button id="loadBtn" type="button">LOAD</button>
+          </div>
+          <button id="randomBtn" type="button">RANDOM PROTEIN</button>
+          <p class="hint">Try: 1CRN, 4HHB, 1UBQ, 2MNR</p>
+
+          <h2>View Settings</h2>
+          <label for="xRot">Rotate X</label>
+          <input id="xRot" type="range" min="-180" max="180" value="20" />
+
+          <label for="yRot">Rotate Y</label>
+          <input id="yRot" type="range" min="-180" max="180" value="-25" />
+
+          <label for="zRot">Rotate Z</label>
+          <input id="zRot" type="range" min="-180" max="180" value="0" />
+          <label class="checkbox-row" for="autoRotate">
+            <input id="autoRotate" type="checkbox" />
+            Rotate
+          </label>
+          <label for="turntableSpeed">Rotation speed</label>
+          <input id="turntableSpeed" type="range" min="5" max="90" value="28" />
+
+          <label for="scale">Scale</label>
+          <input id="scale" type="range" min="1" max="12" value="1" />
+
+          <h2>Atom Display</h2>
+          <label class="checkbox-row" for="showNumbers">
+            <input id="showNumbers" type="checkbox" />
+            Show carbon numbering
+          </label>
+          <div class="range-row">
+            <label for="highlightStart">Highlight range</label>
+            <div class="inline-inputs">
+              <input id="highlightStart" type="number" min="1" placeholder="Start" />
+              <span>to</span>
+              <input id="highlightEnd" type="number" min="1" placeholder="End" />
+            </div>
+          </div>
+          <div class="input-row">
+            <button id="applyRangeBtn" type="button">HIGHLIGHT</button>
+            <button id="clearRangeBtn" type="button">CLEAR</button>
+          </div>
+
+          <div id="status" class="status">Ready.</div>
+        </section>
+
+        <section class="window viewer">
+          <h2>Alpha-Carbon Backbone</h2>
+          <div id="viewerMain" class="viewer-main">
+            <canvas id="viewerCanvas" width="800" height="540"></canvas>
+            <aside class="viewer-dock">
+              <div class="viewer-actions">
+                <button id="fullscreenBtn" class="fullscreen-btn" type="button">FULLSCREEN</button>
+                <button id="configToggleBtn" class="config-toggle" type="button" aria-expanded="false">
+                  LIGHT + COLOR
+                </button>
+              </div>
+              <section id="configPanel" class="config-panel hidden" aria-label="Lighting and color configuration">
+                <h2>Lighting + Color Config</h2>
+
+                <label class="checkbox-row" for="lightingEnabled">
+                  <input id="lightingEnabled" type="checkbox" />
+                  Enable lighting effects
+                </label>
+                <label class="checkbox-row" for="showLightSource">
+                  <input id="showLightSource" type="checkbox" />
+                  Show light source marker
+                </label>
+
+                <label for="lightX">Light X</label>
+                <input id="lightX" type="range" min="-1.5" max="1.5" step="0.01" value="-0.6" />
+
+                <label for="lightY">Light Y</label>
+                <input id="lightY" type="range" min="-1.5" max="1.5" step="0.01" value="0.8" />
+
+                <label for="lightZ">Light Z</label>
+                <input id="lightZ" type="range" min="-1.5" max="1.5" step="0.01" value="0.75" />
+
+                <label for="lightStrength">Light strength</label>
+                <input id="lightStrength" type="range" min="0" max="30" step="0.1" value="8" />
+
+                <label for="ambientStrength">Ambient light</label>
+                <input id="ambientStrength" type="range" min="0" max="1.2" step="0.01" value="0.38" />
+
+                <label for="diffuseStrength">Diffuse strength</label>
+                <input id="diffuseStrength" type="range" min="0" max="1.8" step="0.01" value="0.9" />
+
+                <label for="specularStrength">Specular strength</label>
+                <input id="specularStrength" type="range" min="0" max="1.2" step="0.01" value="0.3" />
+
+                <label for="shininess">Shininess</label>
+                <input id="shininess" type="range" min="4" max="96" step="1" value="28" />
+
+                <label for="backboneThickness">Backbone thickness</label>
+                <input id="backboneThickness" type="range" min="1" max="8" step="0.1" value="2.4" />
+
+                <label for="atomSize">Atom size</label>
+                <input id="atomSize" type="range" min="1.4" max="10" step="0.1" value="3.2" />
+
+                <label for="proteinZoom">Protein zoom</label>
+                <input id="proteinZoom" type="range" min="0.5" max="3.5" step="0.05" value="1" />
+
+                <label for="chainShadeDifference">Chain shade difference</label>
+                <input id="chainShadeDifference" type="range" min="0" max="2" step="0.05" value="1.35" />
+
+                <label class="checkbox-row" for="showLegendOverlay">
+                  <input id="showLegendOverlay" type="checkbox" checked />
+                  Show legend in render
+                </label>
+                <label class="checkbox-row" for="showStructureOverlay">
+                  <input id="showStructureOverlay" type="checkbox" />
+                  Show structure info in render
+                </label>
+                <label class="checkbox-row" for="showEntryOverlay">
+                  <input id="showEntryOverlay" type="checkbox" />
+                  Show entry info in render
+                </label>
+                <label class="checkbox-row" for="autoRandomProtein">
+                  <input id="autoRandomProtein" type="checkbox" />
+                  Auto-random protein every 60 s
+                </label>
+
+                <div class="config-grid">
+                  <label for="backboneColor">Backbone color</label>
+                  <input id="backboneColor" type="color" value="#4ae560" />
+
+                  <label for="atomColor">Atom color</label>
+                  <input id="atomColor" type="color" value="#fca503" />
+
+                  <label for="highlightColor">Highlight color</label>
+                  <input id="highlightColor" type="color" value="#ffd85c" />
+
+                  <label for="labelColor">Label color</label>
+                  <input id="labelColor" type="color" value="#d6ffdf" />
+
+                  <label for="bgTopColor">Background top</label>
+                  <input id="bgTopColor" type="color" value="#050816" />
+
+                  <label for="bgBottomColor">Background bottom</label>
+                  <input id="bgBottomColor" type="color" value="#02030a" />
+                </div>
+              </section>
+            </aside>
+          </div>
+          <div id="meta" class="meta">No structure loaded.</div>
+          <div id="infoBox" class="info-box">
+            <div class="info-box-title">Entry Information</div>
+            <div id="infoContent" class="info-content">No entry metadata loaded.</div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="window footer">
+        Data: wwPDB / RCSB PDB. Rendering: client-side HTML5 canvas. | &copy; 2026 Magnus Lian
+        Akerholt
+      </footer>
+    </div>
+
     <script src="script.js"></script>
   </body>
 </html>
