@@ -1,5 +1,41 @@
-const SAMPLE_IDS = ["1CRN", "4HHB", "1UBQ", "2MNR", "1BNA", "3NIR", "2PTC"];
+const SAMPLE_IDS = [
+  "1CRN",
+  "1STP",
+  "1UBQ",
+  "1MBO",
+  "1HHP",
+  "1TIM",
+  "1PTQ",
+  "1AON",
+  "1BTA",
+  "1AKI",
+  "1LYZ",
+  "1PGA",
+  "1R69",
+  "1CYO",
+  "1GFL",
+  "1L2Y",
+  "1KTE",
+  "2MNR",
+  "2PTC",
+  "2CI2",
+  "2DN2",
+  "2GB1",
+  "2HBB",
+  "2RH1",
+  "3NIR",
+  "3CLN",
+  "3EAM",
+  "3PQR",
+  "4HHB",
+  "4AKE",
+  "4INS",
+  "5CYT",
+  "6LYZ",
+  "7RSA"
+];
 const PDB_ENDPOINT = "https://files.rcsb.org/download/";
+const RCSB_SEARCH_ENDPOINT = "https://search.rcsb.org/rcsbsearch/v2/query";
 const EPSILON = 1e-6;
 
 const pdbIdInput = document.getElementById("pdbId");
@@ -63,6 +99,13 @@ let segmentLightCache = [];
 let lightAxisIndicator = { axis: null, until: 0 };
 let autoRandomIntervalId = null;
 let isLoadingStructure = false;
+let noBackboneNotice = null;
+let noBackboneTimeoutId = null;
+let remoteProteinPool = null;
+let remoteProteinPoolPromise = null;
+let randomProteinQueue = [];
+let randomProteinQueuePromise = null;
+let recentRandomIds = [];
 const renderConfig = {
   lightingEnabled: false,
   showLightSource: false,
@@ -89,6 +132,9 @@ const renderConfig = {
   bgTopColor: { r: 5, g: 8, b: 22 },
   bgBottomColor: { r: 2, g: 3, b: 10 }
 };
+const RANDOM_QUEUE_TARGET = 30;
+const RANDOM_QUEUE_REFILL_THRESHOLD = 10;
+const RANDOM_RECENT_HISTORY_LIMIT = 12;
 
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
@@ -97,6 +143,14 @@ function setStatus(message, isError = false) {
 
 function setInfoContent(message) {
   infoContentEl.textContent = message;
+}
+
+function clearNoBackboneNotice() {
+  if (noBackboneTimeoutId) {
+    window.clearTimeout(noBackboneTimeoutId);
+    noBackboneTimeoutId = null;
+  }
+  noBackboneNotice = null;
 }
 
 function createStarfield(count) {
@@ -840,10 +894,199 @@ function drawIntro() {
   ctx.fillText("Retro starfield mode ready", canvas.width / 2, canvas.height / 2 + 28);
 }
 
-function getRandomProteinId() {
-  const candidates = SAMPLE_IDS.filter((id) => id !== structureId);
-  const pool = candidates.length ? candidates : SAMPLE_IDS;
-  return pool[Math.floor(Math.random() * pool.length)];
+function drawNoBackboneNotice() {
+  drawViewerBackground();
+
+  const remainingMs = Math.max(0, noBackboneNotice.deadline - Date.now());
+  const seconds = Math.ceil(remainingMs / 1000);
+
+  ctx.save();
+  ctx.fillStyle = "rgba(8, 12, 28, 0.78)";
+  ctx.fillRect(canvas.width * 0.16, canvas.height * 0.34, canvas.width * 0.68, canvas.height * 0.22);
+  ctx.strokeStyle = "rgba(252, 165, 3, 0.85)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(canvas.width * 0.16, canvas.height * 0.34, canvas.width * 0.68, canvas.height * 0.22);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#fca503";
+  ctx.font = "bold 18px Consolas";
+  ctx.fillText(
+    `Structure ${noBackboneNotice.pdbId} does not contain a CA backbone`,
+    canvas.width / 2,
+    canvas.height * 0.44
+  );
+  ctx.fillStyle = "#d8ecff";
+  ctx.font = "13px Consolas";
+  ctx.fillText(
+    `Loading a new random structure in ${seconds} s`,
+    canvas.width / 2,
+    canvas.height * 0.5
+  );
+  ctx.restore();
+}
+
+async function fetchRemoteProteinPool() {
+  if (remoteProteinPool?.length) {
+    return remoteProteinPool;
+  }
+
+  if (remoteProteinPoolPromise) {
+    return remoteProteinPoolPromise;
+  }
+
+  remoteProteinPoolPromise = (async () => {
+    const response = await fetch(RCSB_SEARCH_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        query: {
+          type: "group",
+          logical_operator: "and",
+          nodes: [
+            {
+              type: "terminal",
+              service: "text",
+              parameters: {
+                attribute: "rcsb_entry_info.polymer_entity_count_protein",
+                operator: "greater",
+                value: 0
+              }
+            },
+            {
+              type: "terminal",
+              service: "text",
+              parameters: {
+                attribute: "rcsb_entry_info.structure_determination_methodology",
+                operator: "exact_match",
+                value: "experimental"
+              }
+            }
+          ]
+        },
+        request_options: {
+          return_all_hits: true,
+          results_verbosity: "compact"
+        },
+        return_type: "entry"
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`RCSB search responded ${response.status}`);
+    }
+
+    const data = await response.json();
+    const ids = (data?.result_set || [])
+      .map((item) => String(item.identifier || "").toUpperCase())
+      .filter((id) => /^[A-Z0-9]{4}$/.test(id));
+
+    if (!ids.length) {
+      throw new Error("RCSB search returned no protein entries");
+    }
+
+    remoteProteinPool = ids;
+    return remoteProteinPool;
+  })();
+
+  try {
+    return await remoteProteinPoolPromise;
+  } finally {
+    remoteProteinPoolPromise = null;
+  }
+}
+
+function pushRecentRandomId(id) {
+  if (!id) {
+    return;
+  }
+
+  recentRandomIds = [id, ...recentRandomIds.filter((value) => value !== id)].slice(0, RANDOM_RECENT_HISTORY_LIMIT);
+}
+
+function shuffleArray(values) {
+  const copy = values.slice();
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
+  }
+  return copy;
+}
+
+async function fillRandomProteinQueue(force = false) {
+  if (!force && randomProteinQueue.length >= RANDOM_QUEUE_TARGET) {
+    return randomProteinQueue;
+  }
+
+  if (randomProteinQueuePromise) {
+    return randomProteinQueuePromise;
+  }
+
+  randomProteinQueuePromise = (async () => {
+    const excluded = new Set([structureId, ...randomProteinQueue, ...recentRandomIds].filter(Boolean));
+
+    try {
+      const remotePool = await fetchRemoteProteinPool();
+      const shuffled = shuffleArray(remotePool).filter((id) => !excluded.has(id));
+      const needed = Math.max(0, RANDOM_QUEUE_TARGET - randomProteinQueue.length);
+      randomProteinQueue = randomProteinQueue.concat(shuffled.slice(0, needed));
+    } catch {
+      const shuffledFallback = shuffleArray(SAMPLE_IDS).filter((id) => !excluded.has(id));
+      const needed = Math.max(0, RANDOM_QUEUE_TARGET - randomProteinQueue.length);
+      randomProteinQueue = randomProteinQueue.concat(shuffledFallback.slice(0, needed));
+    }
+
+    return randomProteinQueue;
+  })();
+
+  try {
+    return await randomProteinQueuePromise;
+  } finally {
+    randomProteinQueuePromise = null;
+  }
+}
+
+function maintainRandomProteinQueue() {
+  if (randomProteinQueue.length <= RANDOM_QUEUE_REFILL_THRESHOLD) {
+    void fillRandomProteinQueue();
+  }
+}
+
+async function getRandomProteinId(excludedIds = []) {
+  const excluded = new Set([structureId, ...excludedIds].filter(Boolean));
+
+  if (!randomProteinQueue.length) {
+    await fillRandomProteinQueue(true);
+  }
+
+  for (let index = 0; index < randomProteinQueue.length; index += 1) {
+    const id = randomProteinQueue[index];
+    if (!excluded.has(id)) {
+      randomProteinQueue.splice(index, 1);
+      pushRecentRandomId(id);
+      maintainRandomProteinQueue();
+      return id;
+    }
+  }
+
+  await fillRandomProteinQueue(true);
+
+  for (let index = 0; index < randomProteinQueue.length; index += 1) {
+    const id = randomProteinQueue[index];
+    if (!excluded.has(id)) {
+      randomProteinQueue.splice(index, 1);
+      pushRecentRandomId(id);
+      maintainRandomProteinQueue();
+      return id;
+    }
+  }
+
+  const fallbackCandidates = SAMPLE_IDS.filter((id) => !excluded.has(id));
+  const fallbackPool = fallbackCandidates.length ? fallbackCandidates : SAMPLE_IDS;
+  const id = fallbackPool[Math.floor(Math.random() * fallbackPool.length)];
+  pushRecentRandomId(id);
+  return id;
 }
 
 function syncAutoRandomTimer() {
@@ -861,11 +1104,17 @@ function syncAutoRandomTimer() {
       return;
     }
 
-    const randomId = getRandomProteinId();
-    pdbIdInput.value = randomId;
-    setStatus(`Auto-random loading ${randomId}...`);
-    loadStructure(randomId);
-  }, 60000);
+    getRandomProteinId()
+      .then((randomId) => {
+        if (isLoadingStructure) {
+          return;
+        }
+        pdbIdInput.value = randomId;
+        setStatus(`Auto-random loading ${randomId}...`);
+        loadStructure(randomId);
+      })
+      .catch(() => {});
+  }, 15000);
 }
 
 function render() {
@@ -873,6 +1122,10 @@ function render() {
   drawViewerBackground();
 
   if (!backbone.length) {
+    if (noBackboneNotice) {
+      drawNoBackboneNotice();
+      return;
+    }
     drawIntro();
     return;
   }
@@ -1137,6 +1390,7 @@ async function loadStructure(id) {
   }
 
   isLoadingStructure = true;
+  clearNoBackboneNotice();
   setStatus(`Loading ${normalizedId}...`);
   setInfoContent("Fetching structure + entry metadata...");
 
@@ -1149,7 +1403,7 @@ async function loadStructure(id) {
     const text = await response.text();
     const parsed = parsePdb(text);
     if (!parsed.length) {
-      throw new Error("No alpha-carbon atoms found in this structure");
+      throw new Error("__NO_CA_BACKBONE__");
     }
 
     structureId = normalizedId;
@@ -1171,6 +1425,7 @@ async function loadStructure(id) {
       setInfoContent(`Entry ${normalizedId} loaded (metadata unavailable).`);
     }
     setStatus(`Loaded ${normalizedId} with ${backbone.length} alpha-carbons.`);
+    maintainRandomProteinQueue();
     render();
   } catch (error) {
     structureId = null;
@@ -1181,15 +1436,37 @@ async function loadStructure(id) {
     segmentLightCache = [];
     updateMeta();
     setInfoContent("No entry metadata loaded.");
-    drawIntro();
-    setStatus(`Failed to load ${normalizedId}: ${error.message}.`, true);
+    if (error.message === "__NO_CA_BACKBONE__") {
+      noBackboneNotice = {
+        pdbId: normalizedId,
+        deadline: Date.now() + 5000
+      };
+      noBackboneTimeoutId = window.setTimeout(() => {
+        noBackboneTimeoutId = null;
+        getRandomProteinId([normalizedId])
+          .then((randomId) => {
+            pdbIdInput.value = randomId;
+            loadStructure(randomId);
+          })
+          .catch(() => {});
+      }, 5000);
+      setStatus(`Structure ${normalizedId} does not contain a CA backbone. Loading a random structure in 5 s.`, true);
+      render();
+    } else {
+      drawIntro();
+      setStatus(`Failed to load ${normalizedId}: ${error.message}.`, true);
+    }
   } finally {
     isLoadingStructure = false;
+    maintainRandomProteinQueue();
     syncAutoRandomTimer();
   }
 }
 
 function stepAutoRotate(timestamp) {
+  if (noBackboneNotice && !backbone.length) {
+    render();
+  }
   if (autoRotateInput.checked && backbone.length) {
     const previous = autoRotateLastTime ?? timestamp;
     const deltaSeconds = (timestamp - previous) / 1000;
@@ -1208,9 +1485,14 @@ loadBtn.addEventListener("click", () => {
 });
 
 randomBtn.addEventListener("click", () => {
-  const randomId = SAMPLE_IDS[Math.floor(Math.random() * SAMPLE_IDS.length)];
-  pdbIdInput.value = randomId;
-  loadStructure(randomId);
+  getRandomProteinId()
+    .then((randomId) => {
+      pdbIdInput.value = randomId;
+      loadStructure(randomId);
+    })
+    .catch(() => {
+      setStatus("Could not fetch a random protein ID.", true);
+    });
 });
 
 pdbIdInput.addEventListener("keydown", (event) => {
@@ -1319,4 +1601,5 @@ updateFullscreenButton();
 resizeCanvasToDisplaySize();
 drawIntro();
 setInfoContent("No entry metadata loaded.");
+void fillRandomProteinQueue(true);
 window.requestAnimationFrame(stepAutoRotate);
